@@ -3,33 +3,33 @@
 // GNU GPL v2
 
 // Purpose:
-// To give our Zumo Robots a model, by which to reaact to the opposing robots.
+// To give our BetterBoi a model, by which to reaact to the opposing robots.
 // The flowchart, that illustrates the FSM is as follows:
-//                       _____
-//                      |     |
-//                      |Start|
-//                      |_____|
-//                         |
-//                    OnButtonPress
-//                         |
-//                      ___v__
-//                     |      |
-//                     | Idle |
-//                     |______|
-//                         |
-//                  On5SecondsPassed
-//                         |
-//                     ____v___
-//                    |        |
-//          --OnFind--| Search |<----
-//         |          |________|     |
-//      ___v___            |         |
-//     |       |         OnEdge   OnSafe
-//     | Chase |           |         |
-//     |_______|       ____v___      |
-//         |          |        |     |
-//       OnEdge------>| BackUp |-----     
-//                    |________|
+//                         _____
+//                        |     |
+//                        |Start|
+//                        |_____|
+//                           |
+//                      OnButtonPress
+//                           |
+//                        ___v__
+//                       |      |
+//                       | Idle |
+//                       |______|
+//                           |
+//                    On5SecondsPassed
+//   ______                  |
+//  |  L/R |<--OnRight--|____v___
+//  | Turn |<--OnLeft---|        |
+//  |______|- --OnFind--| Search |<----
+//           |          |________|     |
+//        ___v___            |         |
+//       |       |         OnEdge   OnSafe
+//       | Chase |           |         |
+//       |_______|       ____v___      |
+//           |          |        |     |
+//         OnEdge------>| BackUp |-----     
+//                      |________|
 //
 // Method:
 // In order to keep track of the states in the FSM, two enums are generated:
@@ -42,8 +42,8 @@
 // The machine out of the state.
 
 // Let's first include all the relevant libraries:
-#include <NewPing.h>
-#include <CodingPirates.h>
+#include <NewPing.h> // For the ultrasonic sensors
+#include <CodingPirates.h> // For the Coding Pirates motor
 
 
 // Ultrasound sensor _______________________________________________________________________________________
@@ -381,7 +381,7 @@ void search(void){
   else if(sonarReadLeft < SONAR_THRESHOLD && sonarReadLeft > 0){
     zumoEvent = OnLeft;
     return;
-  }
+  } 
   // Check for the opponent on Right:
   else if(sonarReadRight < SONAR_THRESHOLD && sonarReadRight > 0){
     zumoEvent = OnRight;
