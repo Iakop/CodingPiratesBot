@@ -105,8 +105,8 @@ enum IRTrigger trigger;
 
 // Firstly, some important pins:
 IRsensor front(FR);
-IRsensor backL(BL);
-IRsensor backR(BR);
+IRsensor backL(BR);
+IRsensor backR(BL);
 #define IR_THRESH 512  // The value that analogRead must exceed to trigger a response.
 
 void IRInit(void){
@@ -117,13 +117,13 @@ void IRInit(void){
 
 // And the update function:
 int IRUpdate(void){
-  if(front.read() > IR_THRESH){
+  if(front.read() == false){
     return 0;
   }
-  else if(backL.read() > IR_THRESH){
+  else if(backL.read() == false){
     return 1;
   }
-  else if(backR.read() > IR_THRESH){
+  else if(backR.read() == false){
     return 2;
   }
   return -1;
@@ -138,16 +138,19 @@ int IRUpdate(void){
 #define REVERSE_SPEED     255 
 #define TURN_SPEED        200
 #define FORWARD_SPEED     255
-#define SEARCH_SPEED      150
+#define SEARCH_SPEED      200
 // Duration of backing, and turn:
-#define REVERSE_DURATION  200 // ms
-#define TURN_DURATION     300 // ms
+#define REVERSE_DURATION  250 // ms
+#define TURN_DURATION     500 // ms
+
+// The time to wait in the beginning.
+#define IDLETIME 3000
 
 // State Machine ____________________________________________________________________________________________
 
 // First, the states and events are enumerated:
-enum States { Start, Idle, Search, Chase, BackUp, TurnLeft, TurnRight };
-enum Events { None, OnButtonPress, On5SecondsPassed, OnFind, OnEdge, OnSafe, OnLost, OnLeft, OnRight };
+enum States { Start, Idle, Search, Chase, BackUp, TurnLeft, TurnRight, FindBorder };
+enum Events { None, OnButtonPress, On5SecondsPassed, OnFind, OnEdge, OnSafe, OnLost, OnLeft, OnRight, OnBorderFind };
 
 // Then the variables to hold the states themselves are defined:
 static enum States zumoState = Start;
@@ -174,7 +177,7 @@ void updateState(void){
       break;
     case On5SecondsPassed:
       if(zumoState == Idle){
-        zumoState = Search;
+        zumoState = FindBorder;
       }
       break;
     case OnFind:
@@ -222,6 +225,11 @@ void updateState(void){
         zumoState = TurnRight;
       }
       break;
+    case OnBorderFind:
+      if(zumoState == FindBorder){
+        zumoState = Search;
+      }
+      break;
     default:
       break;
   }
@@ -256,11 +264,13 @@ void doState(void){
     case TurnRight:
       turnRight();
       break;
+    case FindBorder:
+      findBorder();
+      break;
     default:
       break;
   }
 }
-
 // Timers ____________________________________________________________________________________________________
 
 // Some of the states require timers, and some also require similar mechanisms to function properly:
@@ -272,7 +282,7 @@ unsigned long long int idleTimer;
 
 // Handles the idleTimer.
 bool updateIdle(void){
-  if (startIdleTimer && millis() >= idleTimer + 5000 && !stopIdleTimer){
+  if (startIdleTimer && millis() >= idleTimer + IDLETIME && !stopIdleTimer){
     stopIdleTimer = true;
     return true;
   }
@@ -460,6 +470,16 @@ void turnRight(void){
     zumoEvent = OnFind;
     return;
   }
+}
+
+void findBorder(void){
+  motorSpeeds(250, 250);
+  while(IRUpdate() <= -1);
+  motorSpeeds(-50, -50);
+  delay(50);
+  motorSpeeds(255, -255);
+  delay(1000);
+  zumoEvent = OnBorderFind;
 }
 
 int otteTal(void){
