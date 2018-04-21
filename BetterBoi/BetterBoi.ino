@@ -43,38 +43,26 @@
 
 // Let's first include all the relevant libraries:
 #include <NewPing.h>
-#include <ZumoShield.h>
+#include <CodingPirates.h>
 
-// Zumo Pushtbutton ________________________________________________________________________________________
-
-// The ZUMO_BUTTON is already defined, so let's use it:
-Pushbutton button(ZUMO_BUTTON);
-
-// And the update function wrapper:
-bool buttonUpdate(void){
-  bool btnPress = button.getSingleDebouncedPress();
-  Serial.print("Button: ");
-  Serial.println(btnPress);
-  return btnPress;
-}
 
 // Ultrasound sensor _______________________________________________________________________________________
 
 // Let's define all the important pins:
-#define TRIGGER_PIN 11
-#define ECHO_PIN 2
+#define TRIGGER_PIN U1_TRIG
+#define ECHO_PIN U1_ECHO
 
 // And for the left:
-#define TRIGGER_PIN_LEFT A0
-#define ECHO_PIN_LEFT A1
+#define TRIGGER_PIN_LEFT U3_TRIG
+#define ECHO_PIN_LEFT U3_ECHO
 // And right:
-#define TRIGGER_PIN_RIGHT A4
-#define ECHO_PIN_RIGHT A5
+#define TRIGGER_PIN_RIGHT U2_TRIG
+#define ECHO_PIN_RIGHT U2_ECHO
 
 // The maximum distance for the ultrasonic sensor
 #define MAX_DISTANCE 100
 // And the threshold for closeness:
-#define SONAR_THRESHOLD 30
+#define SONAR_THRESHOLD 50
 
 // Then we instantiate a new object of type NewPing:
 NewPing sonar(TRIGGER_PIN, ECHO_PIN, MAX_DISTANCE);
@@ -108,49 +96,49 @@ int sonarUpdateRight(void){
   return pingReadRight;
 }
 
-// QTR Sensors _____________________________________________________________________________________________
+// IR Reflection Sensors _____________________________________________________________________________________________
+
+// enum to make the front, back left, and back right IR triggers explicit:
+enum IRTrigger { front_trigd, back_L_trigd, back_R_trigd };
+
+enum IRTrigger trigger;
 
 // Firstly, some important pins:
-#define NUM_SENSORS 4 //6    // Number of sensors used - 2 in this case, as we don't want to waste time on the others.
-#define TIMEOUT 500  // The maximum amount of time to wait, before the sensors stop waiting.
-#define QTR1 4
-#define QTR2 A3
-//#define QTR3 11
-//#define QTR4 A0
-#define QTR5 A2
-#define QTR6 5
+IRsensor front(FR);
+IRsensor backL(BL);
+IRsensor backR(BR);
+#define IR_THRESH 512  // The value that analogRead must exceed to trigger a response.
 
-// Then the threshhold light value.
-// lightersurface = lower number. The threshhold for whit surface is around 200.
-#define QTRTHRESHOLD 300
-
-// Viewed from the back and right to left, the Sensors are attached to the pins:
-QTRSensorsRC qtrrc((unsigned char[]) {QTR1, QTR2, /*QTR3, QTR4,*/ QTR5, QTR6}, NUM_SENSORS, TIMEOUT);
-
-unsigned int sensorValues[NUM_SENSORS]; // Array to hold the read values.
+void IRInit(void){
+  pinMode(FR, INPUT);
+  pinMode(BL, INPUT);
+  pinMode(BR, INPUT);
+}
 
 // And the update function:
-int QTRUpdate(void){
-  // Reads the sensor values, by waiting for the RC level to fall. 
-  qtrrc.read(sensorValues);
-  for(int i = 0; i < NUM_SENSORS; i++){
-    if(sensorValues[i] < QTRTHRESHOLD){
-      return i;
-    }
+int IRUpdate(void){
+  if(front.read() > IR_THRESH){
+    return 0;
+  }
+  else if(backL.read() > IR_THRESH){
+    return 1;
+  }
+  else if(backR.read() > IR_THRESH){
+    return 2;
   }
   return -1;
 }
 
+
 // Motors ____________________________________________________________________________________________
 
-// Initializes The motors:
-ZumoMotors motors;
+// Motor pins are initialized by the CodingPirates library using motorInit().
 
 // Constants to set the motor speeds:
-#define REVERSE_SPEED     400 
-#define TURN_SPEED        300
-#define FORWARD_SPEED     400
-#define SEARCH_SPEED      200
+#define REVERSE_SPEED     255 
+#define TURN_SPEED        200
+#define FORWARD_SPEED     255
+#define SEARCH_SPEED      150
 // Duration of backing, and turn:
 #define REVERSE_DURATION  200 // ms
 #define TURN_DURATION     300 // ms
@@ -300,7 +288,8 @@ unsigned long long int otteTalsTimer;
 
 // Initializes the components of the robot in the beginning of the setup() function.
 void initialize(){
-  pinMode(ZUMO_BUTTON, INPUT);
+  IRInit();
+  motorInit();
   zumoState = Start;
   zumoEvent = None;
   idleTimer = millis();
@@ -331,9 +320,7 @@ void loop(){
 // The state functions _______________________________________________________________________________________
 
 void start(void){
-  if(buttonUpdate()){
-    zumoEvent = OnButtonPress;
-  }
+  zumoEvent = OnButtonPress;
 }
 
 void idle(void){
@@ -357,13 +344,14 @@ void search(void){
       return; // Instantly return, to not waste any time.
   }*/
   
-  
-  // Update QTR for edge detection, to fire OnEdge as fast as possible.
-  if(QTRUpdate() > -1){
+  trigger = IRUpdate();
+  // Update IR for edge detection, to fire OnEdge as fast as possible.
+  if(trigger > -1){
     zumoEvent = OnEdge;
     return; // Instantly return, to not waste any time.
   }
-  motors.setSpeeds(SEARCH_SPEED/2, SEARCH_SPEED);
+  
+  motorSpeeds(SEARCH_SPEED/2, SEARCH_SPEED);
   /*
   unsigned long long int millisRead = millis();  
   if (millisRead > otteTalsTimer && millisRead < otteTalsTimer + 1000){
@@ -384,7 +372,7 @@ void search(void){
   int sonarReadRight = sonarUpdateRight();
   // If no edge is seen, check for the opponent:
   if(sonarRead < SONAR_THRESHOLD && sonarRead > 0){
-    motors.setSpeeds(0, 0);
+    motorSpeeds(0, 0);
     delay(50);
     zumoEvent = OnFind;
     return;
@@ -402,49 +390,51 @@ void search(void){
 }
 
 void chase(void){
-  motors.setSpeeds(FORWARD_SPEED, FORWARD_SPEED);
-  // Update QTR for edge detection, to fire OnEdge as fast as possible.
-  if(QTRUpdate() > -1){
+  motorSpeeds(FORWARD_SPEED, FORWARD_SPEED);
+  
+  trigger = IRUpdate();
+  // Update IR for edge detection, to fire OnEdge as fast as possible.
+  if(trigger > -1){
     zumoEvent = OnEdge;
     return; // Instantly return, to not waste any time.
   }
 }
 
 void backUp(void){
-  if(sensorValues[0] < sensorValues[NUM_SENSORS-1]){
-    motors.setSpeeds(-REVERSE_SPEED, -REVERSE_SPEED/2);
+
+  if(trigger == front_trigd){
+    motorSpeeds(-REVERSE_SPEED, -REVERSE_SPEED);
     delay(REVERSE_DURATION);
-    motors.setSpeeds(-TURN_SPEED, TURN_SPEED);
+    motorSpeeds(-TURN_SPEED, TURN_SPEED);
     delay(TURN_DURATION);
   }
-  if(sensorValues[0] > sensorValues[NUM_SENSORS-1]){
-    motors.setSpeeds(-REVERSE_SPEED/2, -REVERSE_SPEED);
+  if(trigger == back_L_trigd){
+    motorSpeeds(FORWARD_SPEED, FORWARD_SPEED/2);
     delay(REVERSE_DURATION);
-    motors.setSpeeds(TURN_SPEED, -TURN_SPEED);
-    delay(TURN_DURATION);
   }
-  else{
-    motors.setSpeeds(-REVERSE_SPEED, -REVERSE_SPEED);
+  if(trigger == back_R_trigd){
+    motorSpeeds(FORWARD_SPEED/2, FORWARD_SPEED);
     delay(REVERSE_DURATION);
-    motors.setSpeeds(-TURN_SPEED, TURN_SPEED);
-    delay(TURN_DURATION);
   }
+  
   zumoEvent = OnSafe;
 }
 
 void turnLeft(void){
-  motors.setSpeeds(-TURN_SPEED, TURN_SPEED);
+  motorSpeeds(-TURN_SPEED, TURN_SPEED);
   // check for the opponent:
   
-  // Update QTR for edge detection, to fire OnEdge as fast as possible.
-  if(QTRUpdate() > -1){
+  trigger = IRUpdate();
+  // Update IR for edge detection, to fire OnEdge as fast as possible.
+  if(trigger > -1){
     zumoEvent = OnEdge;
     return; // Instantly return, to not waste any time.
   }
+  
   int sonarRead = sonarUpdate();
   // If no edge is seen, check for the opponent:
   if(sonarRead < SONAR_THRESHOLD && sonarRead > 0){
-    motors.setSpeeds(0, 0);
+    motorSpeeds(0, 0);
     delay(50);
     zumoEvent = OnFind;
     return;
@@ -452,11 +442,12 @@ void turnLeft(void){
 }
 
 void turnRight(void){
-  motors.setSpeeds(TURN_SPEED, -TURN_SPEED);
+  motorSpeeds(TURN_SPEED, -TURN_SPEED);
   // check for the opponent:
   
-  // Update QTR for edge detection, to fire OnEdge as fast as possible.
-  if(QTRUpdate() > -1){
+  trigger = IRUpdate();
+  // Update IR for edge detection, to fire OnEdge as fast as possible.
+  if(trigger > -1){
     zumoEvent = OnEdge;
     return; // Instantly return, to not waste any time.
   }
@@ -464,7 +455,7 @@ void turnRight(void){
   int sonarRead = sonarUpdate();
   // If no edge is seen, check for the opponent:
   if(sonarRead < SONAR_THRESHOLD && sonarRead > 0){
-    motors.setSpeeds(0, 0);
+    motorSpeeds(0, 0);
     delay(50);
     zumoEvent = OnFind;
     return;
@@ -472,20 +463,22 @@ void turnRight(void){
 }
 
 int otteTal(void){
-  // Update QTR for edge detection, to fire OnEdge as fast as possible.
-  if(QTRUpdate() > -1){
-    return -1; // Instantly return, to not waste any time.
+  trigger = IRUpdate();
+  // Update IR for edge detection, to fire OnEdge as fast as possible.
+  if(trigger > -1){
+    zumoEvent = OnEdge;
+    return; // Instantly return, to not waste any time.
   }
 
   unsigned long long int millisRead = millis();  
   if (millisRead > otteTalsTimer && millisRead < otteTalsTimer + 1000){
-    motors.setSpeeds(400 , 125);
+    motorSpeeds(255 , 200);
   }
   else if (millisRead > otteTalsTimer + 1000 && millisRead < otteTalsTimer + 4000){
-    motors.setSpeeds(125 , 400);
+    motorSpeeds(200 , 255);
   }
   else if (millisRead > otteTalsTimer + 4000 && millisRead < otteTalsTimer + 6000){
-    motors.setSpeeds(400 , 125);
+    motorSpeeds(255 , 200);
   }
   else{
     otteTalsTimer = millis();
